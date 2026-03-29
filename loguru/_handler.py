@@ -158,11 +158,11 @@ class Handler:
             elif self._is_formatter_dynamic:
                 if not self._colorize:
                     precomputed_format = self._memoize_dynamic_format(dynamic_format)
-                    formatted = precomputed_format.format_map(formatter_record)
+                    formatted = self._format_record(precomputed_format, formatter_record)
                 elif colored_message is None:
                     ansi_level = self._levels_ansi_codes[level_id]
                     _, precomputed_format = self._memoize_dynamic_format(dynamic_format, ansi_level)
-                    formatted = precomputed_format.format_map(formatter_record)
+                    formatted = self._format_record(precomputed_format, formatter_record)
                 else:
                     ansi_level = self._levels_ansi_codes[level_id]
                     formatter, precomputed_format = self._memoize_dynamic_format(
@@ -172,16 +172,16 @@ class Handler:
                         record["message"], ansi_level=ansi_level, colored_message=colored_message
                     )
                     formatter_record["message"] = coloring_message
-                    formatted = precomputed_format.format_map(formatter_record)
+                    formatted = self._format_record(precomputed_format, formatter_record)
 
             else:
                 if not self._colorize:
                     precomputed_format = self._decolorized_format
-                    formatted = precomputed_format.format_map(formatter_record)
+                    formatted = self._format_record(precomputed_format, formatter_record)
                 elif colored_message is None:
                     ansi_level = self._levels_ansi_codes[level_id]
                     precomputed_format = self._precolorized_formats[level_id]
-                    formatted = precomputed_format.format_map(formatter_record)
+                    formatted = self._format_record(precomputed_format, formatter_record)
                 else:
                     ansi_level = self._levels_ansi_codes[level_id]
                     precomputed_format = self._precolorized_formats[level_id]
@@ -189,7 +189,7 @@ class Handler:
                         record["message"], ansi_level=ansi_level, colored_message=colored_message
                     )
                     formatter_record["message"] = coloring_message
-                    formatted = precomputed_format.format_map(formatter_record)
+                    formatted = self._format_record(precomputed_format, formatter_record)
 
             if self._serialize:
                 formatted = self._serialize_record(formatted, record)
@@ -204,10 +204,6 @@ class Handler:
                     self._queue.put(str_record)
                 else:
                     self._sink.write(str_record)
-        except KeyError as e:
-            if not self._error_interceptor.should_catch():
-                raise self._make_key_error(e, record) from e
-            self._error_interceptor.print(record, exception=self._make_key_error(e, record))
         except Exception:
             if not self._error_interceptor.should_catch():
                 raise
@@ -248,21 +244,24 @@ class Handler:
         ansi_code = self._levels_ansi_codes[level_id]
         self._precolorized_formats[level_id] = self._formatter.colorize(ansi_code)
 
-    @staticmethod
-    def _make_key_error(original, record):
-        key = original.args[0] if original.args else "?"
-        available = ", ".join(sorted(record.keys()))
-        message = (
-            "The format string references an unknown key '%s'. "
-            "Available record keys are: %s. "
-            "To include custom data, use 'logger.bind(key=value)' and reference it "
-            "as '{extra[key]}' in the format string." % (key, available)
-        )
-        return KeyError(message)
-
     @property
     def levelno(self):
         return self._levelno
+
+    @staticmethod
+    def _format_record(log_format, record):
+        try:
+            return log_format.format_map(record)
+        except KeyError as e:
+            available = ", ".join(map(repr, record.keys()))
+            raise ValueError(
+                "Failed to format log record: key %s not found.\n"
+                "Verify that the format string %r only references valid record keys "
+                "and that all required extra keys are present.\n"
+                "Available records key are: %s.\n"
+                "To include custom data, use `logger.bind(key=value)` and reference it "
+                "as '{extra[key]}' in the format string." % (e, log_format, available)
+            ) from e
 
     @staticmethod
     def _serialize_record(text, record):

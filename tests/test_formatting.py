@@ -246,3 +246,23 @@ def test_invalid_color_markup(writer):
         ValueError, match=r"^Invalid format, color markups could not be parsed correctly$"
     ):
         logger.add(writer, format="<red>Not closed tag", colorize=True)
+
+
+@pytest.mark.parametrize("format_", ["{missing}", lambda _: "{missing}\n"])
+@pytest.mark.parametrize("colorize", [True, False])
+@pytest.mark.parametrize("colors", [True, False])
+def test_invalid_format_key_emits_helpful_error_with_catch(capsys, format_, colorize, colors):
+    logger.add(lambda msg: None, format=format_, catch=True, colorize=colorize)
+    logger.opt(colors=colors).info("Hello")
+    out, err = capsys.readouterr()
+    assert out == ""
+    assert "ValueError: Failed to format log record: key 'missing' not found" in err
+
+
+@pytest.mark.parametrize("format_", ["{missing}", lambda _: "{missing}\n"])
+@pytest.mark.parametrize("colorize", [True, False])
+@pytest.mark.parametrize("colors", [True, False])
+def test_invalid_format_key_raises_enhanced_error_without_catch(format_, colorize, colors):
+    logger.add(lambda msg: None, format=format_, catch=False, colorize=colorize)
+    with pytest.raises(ValueError, match=r"Failed to format log record: key 'missing' not found."):
+        logger.opt(colors=colors).info("Hello")
